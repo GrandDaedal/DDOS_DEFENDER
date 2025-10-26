@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  ddos-protection:
+    build: .
+    container_name: ddos_protection
+    environment:
+      - BOT_TOKEN=TOKEN
+      - ADMIN_CHAT_ID=ID
+      - BLOCK_THRESHOLD=1000
+      - AUTO_UNBLOCK_MINUTES=60
+      - SESSION_TIMEOUT_MINUTES=30
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped

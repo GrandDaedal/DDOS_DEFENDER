@@ -1,0 +1,11 @@
+{
+    "bot_token": "",
+    "admin_chat_id": "",
+    "block_threshold": 1000,
+    "auto_unblock_minutes": 60,
+    "session_timeout_minutes": 30,
+    "monitor_interface": "eth0",
+    "monitor_port": 80,
+    "log_level": "INFO",
+    "face_similarity_threshold": 0.85
+}
