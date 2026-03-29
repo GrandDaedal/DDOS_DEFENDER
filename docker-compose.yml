@@ -5,16 +5,108 @@ services:
     build: .
     container_name: ddos_protection
     environment:
-      - BOT_TOKEN=TOKEN
-      - ADMIN_CHAT_ID=ID
-      - BLOCK_THRESHOLD=1000
-      - AUTO_UNBLOCK_MINUTES=60
-      - SESSION_TIMEOUT_MINUTES=30
+      # Core configuration
+      - DDOS_BOT_TOKEN=${BOT_TOKEN}
+      - DDOS_ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      
+      # Traffic analysis
+      - DDOS_BLOCK_THRESHOLD=${BLOCK_THRESHOLD:-1000}
+      - DDOS_AUTO_UNBLOCK_MINUTES=${AUTO_UNBLOCK_MINUTES:-60}
+      - DDOS_MONITOR_INTERFACE=${MONITOR_INTERFACE:-eth0}
+      - DDOS_MONITOR_PORT=${MONITOR_PORT:-80}
+      - DDOS_RATE_WINDOW_SECONDS=${RATE_WINDOW_SECONDS:-10}
+      
+      # Security
+      - DDOS_FACE_SIMILARITY_THRESHOLD=${FACE_SIMILARITY_THRESHOLD:-0.6}
+      - DDOS_SESSION_TIMEOUT_MINUTES=${SESSION_TIMEOUT_MINUTES:-30}
+      
+      # Performance
+      - DDOS_WORKER_COUNT=${WORKER_COUNT:-4}
+      - DDOS_MAX_QUEUE_SIZE=${MAX_QUEUE_SIZE:-10000}
+      
+      # Logging
+      - DDOS_LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DDOS_LOG_FORMAT=${LOG_FORMAT:-json}
+      
+      # Redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      
+      # Database
+      - DATABASE_URL=sqlite:///data/ddos.db
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
+      - ./data:/app/data:rw
+      - ./logs:/app/logs:rw
+      - ./config:/app/config:ro
+      - ./models:/app/models:rw
+    ports:
+      - "8080:8080"  # Health/metrics endpoint
+      - "9090:9090"  # Prometheus metrics
     network_mode: host
     cap_add:
       - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8080), timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ddos_redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ddos_prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/console_templates'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9091:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ddos_grafana
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:
